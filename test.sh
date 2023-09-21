@@ -4,7 +4,7 @@
 DUNDIE_DB=dundie_test docker compose up -d
 
 # wait 5 seconds
-sleep 5
+sleep 15
 
 # Ensure database is clean
 docker compose exec api dundie reset-db -f

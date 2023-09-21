@@ -1,9 +1,12 @@
 """User related data models"""
-from typing import Optional
-from sqlmodel import Field, SQLModel
+from typing import Optional, TYPE_CHECKING
+from sqlmodel import Field, SQLModel, Relationship
 from dundie.security import HashedPassword, get_password_hash
 from pydantic import BaseModel, root_validator
 from fastapi import HTTPException, status
+
+if TYPE_CHECKING:
+    from dundie.models.transaction import Transaction, Balance
 
 
 class User(SQLModel, table=True):
@@ -19,10 +22,33 @@ class User(SQLModel, table=True):
     dept: str = Field(nullable=False)
     currency: str = Field(nullable=False)
 
+    # Populates a `.user` on `Transaction`
+    incomes: Optional[list["Transaction"]] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"primaryjoin": 'User.id == Transaction.user_id'},
+    )
+    # Populates a `.from_user` on `Transaction`
+    expenses: Optional[list["Transaction"]] = Relationship(
+        back_populates="from_user",
+        sa_relationship_kwargs={"primaryjoin": 'User.id == Transaction.from_id'},
+    )
+    # Populates a `.user` on `Balance`
+    _balance: Optional["Balance"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"lazy": "dynamic"}
+    )
+
     @property
     def superuser(self):
         """"Users belonging to management dept are admins."""
         return self.dept == "management"
+
+    @property
+    def balance(self) -> int:
+        """Returns the current balance of the user"""
+        if (user_balance := self._balance.first()) is not None:  # pyright: ignore
+            return user_balance.value
+        return 0
 
 
 def generate_username(name: str) -> str:
@@ -39,6 +65,17 @@ class UserResponse(BaseModel):
     avatar: Optional[str] = None
     bio: Optional[str] = None
     currency: str
+
+
+class UserResponseWithBalance(UserResponse):
+    balance: Optional[int] = None
+
+    @root_validator(pre=True)
+    def set_balance(cls, values: dict):
+        """Sets the balance of the user"""
+        instance = values["_sa_instance_state"].object
+        values["balance"] = instance.balance
+        return values
 
 
 class UserRequest(BaseModel):
